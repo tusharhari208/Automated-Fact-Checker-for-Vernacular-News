@@ -1,0 +1,33 @@
+
+# Data Handling
+numpy
+pandas
+
+# Machine Learning
+scikit-learn
+
+# NLP & Embeddings
+sentence-transformers
+transformers
+torch
+
+# FAISS (Vector Similarity Search)
+faiss-cpu
+
+# Datasets (FEVER dataset loading)
+datasets
+
+# Wikipedia Search
+wikipedia
+
+# HTTP Requests
+requests
+
+# Hugging Face (for multilingual-e5-small model)
+huggingface-hub
+
+# Progress Bar
+tqdm
+google-generativeai
+
+

@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+myenv/
+saved_models/
+data/raw/
+faiss_index/
+.env
