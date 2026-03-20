@@ -4,7 +4,13 @@ import sys
 import pickle
 import wikipedia
 import google.generativeai as genai
+from scaledown.compressor.scaledown_compressor import ScaleDownCompressor
+import scaledown as sd
+from dotenv import load_dotenv
+import os
+import scaledown as sd
 
+load_dotenv()
 # Add project root to path
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -15,13 +21,29 @@ from dotenv import load_dotenv
 load_dotenv()
 
 GEMINI_API_KEY=os.getenv("GEMINI_API_KEY")
-pipeline=FactCheckerPipeline(GEMINI_API_KEY=)
+
 
 class FactCheckerPipeline:
-
+    def compress_claim(self, text):
+        try:
+            result = self.compressor.compress(
+            context="",
+            prompt="Extract the core factual claim in minimal words: " + text
+        )
+            return result.prompt   # compressed claim
+        except:
+            return text  #fallback
+    if __name__ == "__main__":
+        pipeline = FactCheckerPipeline(GEMINI_API_KEY)
+    
     def __init__(self, gemini_api_key):
         print("Loading Fact Checker Pipeline...")
+        sd.set_api_key(os.getenv("SCALEDOWN_API_KEY"))
 
+        self.compressor = ScaleDownCompressor(
+        target_model="gpt-4o",
+        rate="auto"
+        )
         BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
         # Load classical models
@@ -198,8 +220,15 @@ Keep explanation simple, clear and helpful.
 
         # STEP 3: GENERATE — Gemini generates explanation
         try:
-            response    = self.llm.generate_content(prompt)
-            explanation = response.text
+           compressed = self.compressor.compress(
+           context=evidence_text + "\n" + wiki_summary,
+           prompt=prompt
+           )
+
+           final_prompt = compressed.prompt
+
+           response = self.llm.generate_content(final_prompt)
+           explanation = response.text
         except Exception as e:
             explanation = "Could not generate explanation: " + str(e)
 
@@ -208,8 +237,8 @@ Keep explanation simple, clear and helpful.
     # ============================================
     # MAIN CHECK FUNCTION
     # ============================================
-    def check_news(self, news_text):
-
+    def check_news(self, news_text, use_wiki=False, use_llm=True):
+        news_text = news_text[:300]
         print("\nCHECKING NEWS:")
         print(news_text[:100] + "...")
         print("=" * 50)
@@ -227,13 +256,14 @@ Keep explanation simple, clear and helpful.
 
         # STAGE 2: SIMILARITY SEARCH
         print("\nStage 2 - Similarity Search...")
-        verdict = self.search_engine.get_verdict(news_text[:200])
+        compressed_claim = self.compress_claim(news_text[:200])
+        verdict = self.search_engine.get_verdict(compressed_claim)
         print("  Evidence Verdict   : " + verdict["verdict"])
         print("  Confidence         : " + str(verdict["confidence"]) + "%")
 
         # STAGE 3: WIKIPEDIA CHECK
         print("\nStage 3 - Wikipedia Check...")
-        wiki = self.check_wikipedia(news_text)
+        wiki = {"wiki_verdict": "SKIPPED", "wiki_summary": "", "wiki_confidence": 0}
         print("  Wikipedia Verdict  : " + wiki["wiki_verdict"])
         print("  Wiki Confidence    : " + str(wiki["wiki_confidence"]) + "%")
 
@@ -248,15 +278,12 @@ Keep explanation simple, clear and helpful.
 
         # STAGE 5: RAG + LLM EXPLANATION
         print("\nStage 5 - Generating LLM Explanation...")
-        explanation = self.get_llm_explanation(
-            news_text      = news_text,
-            pa_result      = pa_result,
-            lr_result      = lr_result,
-            evidence_verdict = verdict["verdict"],
-            wiki_summary   = wiki["wiki_summary"],
-            final_verdict  = final_verdict,
-            top_evidence   = verdict["top_results"]
-        )
+        USE_LLM = False
+
+        if USE_LLM:
+            explanation = self.get_llm_explanation(...)
+        else:
+            explanation = "LLM disabled for faster processing"
 
         print("\n" + "=" * 50)
         print("FINAL VERDICT    : " + final_verdict)
