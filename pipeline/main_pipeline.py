@@ -33,8 +33,7 @@ class FactCheckerPipeline:
             return result.prompt   # compressed claim
         except:
             return text  #fallback
-    if __name__ == "__main__":
-        pipeline = FactCheckerPipeline(GEMINI_API_KEY)
+  
     
     def __init__(self, gemini_api_key):
         print("Loading Fact Checker Pipeline...")
@@ -46,15 +45,23 @@ class FactCheckerPipeline:
         )
         BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-        # Load classical models
-        with open(os.path.join(BASE_DIR, "saved_models", "tfidf.pkl"), "rb") as f:
-            self.tfidf = pickle.load(f)
+        # Load classical models (with fallback)
+        try:
+            with open(os.path.join(BASE_DIR, "saved_models", "tfidf.pkl"), "rb") as f:
+                self.tfidf = pickle.load(f)
 
-        with open(os.path.join(BASE_DIR, "saved_models", "passive_aggressive.pkl"), "rb") as f:
-            self.pa_model = pickle.load(f)
+            with open(os.path.join(BASE_DIR, "saved_models", "passive_aggressive.pkl"), "rb") as f:
+                self.pa_model = pickle.load(f)
 
-        with open(os.path.join(BASE_DIR, "saved_models", "logistic_regression.pkl"), "rb") as f:
-            self.lr_model = pickle.load(f)
+            with open(os.path.join(BASE_DIR, "saved_models", "logistic_regression.pkl"), "rb") as f:
+                self.lr_model = pickle.load(f)
+
+            self.use_ml = True
+            print("ML models loaded!")
+
+        except:
+            self.use_ml = False
+            print("ML models not found → using FAISS-only mode")
 
         # Load similarity search engine
         self.search_engine = SimilaritySearchEngine()
@@ -176,7 +183,7 @@ class FactCheckerPipeline:
 
         # STEP 1: RETRIEVE — collect all evidence
         evidence_text = ""
-        for i, ev in enumerate(top_evidence[:3], 1):
+        for i, ev in enumerate(top_evidence[:2], 1):
             evidence_text += (
                 "Evidence " + str(i) + ":\n" +
                 "  Claim : " + ev["claim"] + "\n" +
@@ -220,15 +227,18 @@ Keep explanation simple, clear and helpful.
 
         # STEP 3: GENERATE — Gemini generates explanation
         try:
-           compressed = self.compressor.compress(
-           context=evidence_text + "\n" + wiki_summary,
-           prompt=prompt
-           )
+            compressed_context = (evidence_text + " " + wiki_summary)[:300]
 
-           final_prompt = compressed.prompt
+            compressed = self.compressor.compress(
+                context=compressed_context,
+                prompt=prompt
+            )
 
-           response = self.llm.generate_content(final_prompt)
-           explanation = response.text
+            final_prompt = compressed.prompt
+
+            response = self.llm.generate_content(final_prompt)
+            explanation = response.text
+
         except Exception as e:
             explanation = "Could not generate explanation: " + str(e)
 
@@ -239,51 +249,88 @@ Keep explanation simple, clear and helpful.
     # ============================================
     def check_news(self, news_text, use_wiki=False, use_llm=True):
         news_text = news_text[:300]
+        compressed_news = self.compress_claim(news_text)
+        compressed_claim = compressed_news
         print("\nCHECKING NEWS:")
         print(news_text[:100] + "...")
         print("=" * 50)
 
         # STAGE 1: CLASSICAL MODELS
-        text_tfidf = self.tfidf.transform([news_text])
-        pa_pred    = self.pa_model.predict(text_tfidf)[0]
-        lr_pred    = self.lr_model.predict(text_tfidf)[0]
-        pa_result  = "REAL" if pa_pred == 1 else "FAKE"
-        lr_result  = "REAL" if lr_pred == 1 else "FAKE"
+        if self.use_ml:
+            compressed_input = compressed_news
+            text_tfidf = self.tfidf.transform([compressed_input])
 
-        print("Stage 1 - Classical Models:")
-        print("  Passive Aggressive : " + pa_result)
-        print("  Logistic Regression: " + lr_result)
+            pa_pred = self.pa_model.predict(text_tfidf)[0]
+            lr_pred = self.lr_model.predict(text_tfidf)[0]
 
+            pa_result = "REAL" if pa_pred == 1 else "FAKE"
+            lr_result = "REAL" if lr_pred == 1 else "FAKE"
+
+            print("Stage 1 - Classical Models:")
+            print("  Passive Aggressive : " + pa_result)
+            print("  Logistic Regression: " + lr_result)
+        else:
+            pa_result = "SKIPPED"
+            lr_result = "SKIPPED"
+            print("Stage 1 - Skipped (no ML models)")
+        
         # STAGE 2: SIMILARITY SEARCH
         print("\nStage 2 - Similarity Search...")
-        compressed_claim = self.compress_claim(news_text[:200])
+        compressed_claim = compressed_news
         verdict = self.search_engine.get_verdict(compressed_claim)
         print("  Evidence Verdict   : " + verdict["verdict"])
         print("  Confidence         : " + str(verdict["confidence"]) + "%")
 
         # STAGE 3: WIKIPEDIA CHECK
         print("\nStage 3 - Wikipedia Check...")
-        wiki = {"wiki_verdict": "SKIPPED", "wiki_summary": "", "wiki_confidence": 0}
-        print("  Wikipedia Verdict  : " + wiki["wiki_verdict"])
-        print("  Wiki Confidence    : " + str(wiki["wiki_confidence"]) + "%")
+
+        if verdict["confidence"] < 70:
+            print("  Low confidence → Using Wikipedia")
+            compressed_query = compressed_news
+            wiki = self.check_wikipedia(compressed_query)
+            print("  Wikipedia Verdict  : " + wiki["wiki_verdict"])
+            print("  Wiki Confidence    : " + str(wiki["wiki_confidence"]) + "%")
+
+        else:
+            wiki = {"wiki_verdict": "SKIPPED", "wiki_summary": "", "wiki_confidence": 0}
+            print("  Wikipedia skipped (high FAISS confidence)")
 
         # STAGE 4: COMBINED VERDICT
-        final_verdict = self.get_final_verdict(
-            pa_result,
-            lr_result,
-            verdict["verdict"],
-            wiki["wiki_verdict"]
-        )
-        print("\nStage 4 - Final Verdict: " + final_verdict)
+        if self.use_ml:
+            final_verdict = self.get_final_verdict(
+                pa_result,
+                lr_result,
+                verdict["verdict"],
+                wiki["wiki_verdict"]
+                )
+        else:
+            if verdict["confidence"] > 75:
+                    final_verdict = verdict["verdict"]
+            elif wiki["wiki_verdict"] == "SUPPORTED":
+                final_verdict = "REAL"
+            elif wiki["wiki_verdict"] == "NOT SUPPORTED":
+                final_verdict = "FAKE"
+            else:
+                final_verdict = "UNVERIFIED"
+            print("\nStage 4 - Final Verdict: " + final_verdict)
 
         # STAGE 5: RAG + LLM EXPLANATION
         print("\nStage 5 - Generating LLM Explanation...")
-        USE_LLM = False
 
-        if USE_LLM:
-            explanation = self.get_llm_explanation(...)
+        if final_verdict == "UNVERIFIED" or verdict["confidence"] < 60:
+            print("  Using LLM (low confidence case)")
+
+            explanation = self.get_llm_explanation(
+            news_text,
+            pa_result,
+            lr_result,
+            verdict["verdict"],        
+            wiki["wiki_summary"],
+            final_verdict,
+            verdict["top_evidence"]    
+)
         else:
-            explanation = "LLM disabled for faster processing"
+            explanation = "LLM skipped for speed (high confidence result)"
 
         print("\n" + "=" * 50)
         print("FINAL VERDICT    : " + final_verdict)
@@ -329,10 +376,6 @@ Keep explanation simple, clear and helpful.
 # MAIN WITH LOOP
 # ============================================
 if __name__ == "__main__":
-
-    # PASTE YOUR GEMINI API KEY HERE
-    GEMINI_API_KEY = "paste_your_api_key_here"
-
     pipeline = FactCheckerPipeline(GEMINI_API_KEY)
 
     print("\n" + "=" * 50)
@@ -403,3 +446,5 @@ if __name__ == "__main__":
         print("\n" + "=" * 50)
         print("Check more news? Paste again or type 'quit'")
         print("=" * 50)
+if __name__ == "__main__":
+        pipeline = FactCheckerPipeline(GEMINI_API_KEY)
