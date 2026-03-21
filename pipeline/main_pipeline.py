@@ -7,10 +7,11 @@ import google.generativeai as genai
 from scaledown.compressor.scaledown_compressor import ScaleDownCompressor
 import scaledown as sd
 from dotenv import load_dotenv
-import os
-import scaledown as sd
+from langdetect import detect
+from deep_translator import GoogleTranslator
+from transformers import pipeline
 
-load_dotenv()
+
 # Add project root to path
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -33,6 +34,14 @@ class FactCheckerPipeline:
             return result.prompt   # compressed claim
         except:
             return text  #fallback
+    def translate_text(self, text):
+        try:
+            lang = detect(text)
+            if lang != "en":
+                text = GoogleTranslator(source='auto', target='en').translate(text)
+            return text.lower().strip()
+        except:
+            return text.lower().strip()
   
     
     def __init__(self, gemini_api_key):
@@ -69,6 +78,12 @@ class FactCheckerPipeline:
         # Load Gemini LLM
         genai.configure(api_key=gemini_api_key)
         self.llm = genai.GenerativeModel("gemini-1.5-flash")
+        # NLI Model (for reasoning)
+        self.nli_model = pipeline(
+        "zero-shot-classification",
+        model="facebook/bart-large-mnli"
+        )
+        print("NLI model loaded!")
         print("Gemini LLM loaded!")
 
         print("Pipeline ready!")
@@ -248,6 +263,7 @@ Keep explanation simple, clear and helpful.
     # MAIN CHECK FUNCTION
     # ============================================
     def check_news(self, news_text, use_wiki=False, use_llm=True):
+        news_text = self.translate_text(news_text)
         news_text = news_text[:300]
         compressed_news = self.compress_claim(news_text)
         compressed_claim = compressed_news
@@ -278,6 +294,18 @@ Keep explanation simple, clear and helpful.
         print("\nStage 2 - Similarity Search...")
         compressed_claim = compressed_news
         verdict = self.search_engine.get_verdict(compressed_claim)
+        # NLI reasoning on top evidence
+        if "top_evidence" in verdict and len(verdict["top_evidence"]) > 0:
+            top_claim = verdict["top_evidence"][0]["claim"]
+
+            nli_result = self.nli_model(
+            sequences=top_claim,
+            candidate_labels=[news_text]
+            )
+
+            print("  NLI Result        : " + nli_result["labels"][0])
+        else:
+            nli_result = {"labels": ["unknown"]}
         print("  Evidence Verdict   : " + verdict["verdict"])
         print("  Confidence         : " + str(verdict["confidence"]) + "%")
 
@@ -317,20 +345,32 @@ Keep explanation simple, clear and helpful.
         # STAGE 5: RAG + LLM EXPLANATION
         print("\nStage 5 - Generating LLM Explanation...")
 
-        if final_verdict == "UNVERIFIED" or verdict["confidence"] < 60:
-            print("  Using LLM (low confidence case)")
+        if verdict["confidence"] > 75:
+            explanation = "High confidence → LLM skipped"
 
+        elif verdict["confidence"] > 50:
+            print("  Medium confidence → Using LLM (fast)")
             explanation = self.get_llm_explanation(
-            news_text,
-            pa_result,
-            lr_result,
-            verdict["verdict"],        
-            wiki["wiki_summary"],
-            final_verdict,
-            verdict["top_evidence"]    
-)
+                news_text,
+                pa_result,
+                lr_result,
+                verdict["verdict"],
+                wiki["wiki_summary"],
+                final_verdict,
+                verdict["top_evidence"]
+            )
+
         else:
-            explanation = "LLM skipped for speed (high confidence result)"
+            print("  Low confidence → Using LLM (detailed)")
+            explanation = self.get_llm_explanation(
+                news_text,
+                pa_result,
+                lr_result,
+                verdict["verdict"],
+                wiki["wiki_summary"],
+                final_verdict,
+                verdict["top_evidence"]
+            )
 
         print("\n" + "=" * 50)
         print("FINAL VERDICT    : " + final_verdict)
@@ -446,5 +486,3 @@ if __name__ == "__main__":
         print("\n" + "=" * 50)
         print("Check more news? Paste again or type 'quit'")
         print("=" * 50)
-if __name__ == "__main__":
-        pipeline = FactCheckerPipeline(GEMINI_API_KEY)
