@@ -33,7 +33,7 @@ User Claim (Hindi/English)
 Translated Claim 
     ↓ [ScaleDown compression]
 FAISS Top-5 Evidence (multilingual-e5-small)
-    ↓ [BART-large-mnli NLI]
+    ↓ [BERT-large-mnli NLI]
 Primary Verdict
     ↓ [Low confidence? → Wikipedia API]
 Wikipedia Validation
@@ -93,27 +93,43 @@ POST /factcheck
 *URL active only when `uvicorn app:app --reload` + pyngrok running* [gist.github](https://gist.github.com/alexdlaird/1f0e45d943120d9e9cea8485773a0e4f)
 
 
-## 📂 Real Folder Structure
-
-```
-Fake_News_Detector/
-├── app.py                 # FastAPI endpoints + pyngrok
-├── main.py               # Pipeline orchestrator
-├── pipeline/             # Core processing
-│   ├── benchmark.py
-│   └── main_pipeline.py
+fake_news_detection/
+│
+├── pipeline/
+│     └── main_pipeline.py          # Main fact-checking pipeline
+│     |---app.py
+|      |--benchmark.py
 ├── src/
-│   └── models/           # Trained models
-│       ├── faiss_index/
-│       ├── tfidf_logreg.pkl
-│       └── pa_classifier.pkl
-├── data/                 # Raw datasets
-│   ├── processed/
-│   ├── fake.csv
-│   └── true.csv
-├── train.py              # Model training
-└── requirements.txt
-
+│   └── verification/
+│       └── similarity_search.py  # FAISS semantic search engine
+│
+├── training/
+│   └── train_classical.py        # ML model training script
+│
+├── prepare_data.py               # Builds FAISS index       
+│
+├── faiss_index/
+│   ├── index.faiss               # Generated FAISS index     
+│   ├── claims.pkl                # Generated claims          
+│   ├── labels.pkl                # Generated labels          
+│   ├── evidence.pkl              # Generated evidence       
+│   └── embeddings.npy            # Generated embeddings      
+│
+├── saved_models/
+│   ├── tfidf.pkl                 # Trained TF-IDF         
+│   ├── passive_aggressive.pkl    # Trained PA model          
+│   └── logistic_regression.pkl   # Trained LR model          
+│
+├── data/
+│   └── raw/
+│       ├── fake.csv              # Kaggle dataset            
+│       └── true.csv              # Kaggle dataset            
+│
+├── requirements.txt              # All dependencies         
+├── .env                          # Your API key              
+├── .env.example                  # API key format           
+├── .gitignore                    # Files to ignore           
+└── README.md                     # Project documentation     
 
 ##  Quick Start
 
@@ -173,4 +189,4 @@ Utils: ScaleDown + Wikipedia + Gemini
 - 🔄 **Next:** Streamlit UI, Docker, persistent deployment
 
 
-Need help with **persistent deployment** (Render/Heroku) or **Streamlit frontend**? 🚀
+
