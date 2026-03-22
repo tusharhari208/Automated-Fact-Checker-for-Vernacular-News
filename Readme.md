@@ -93,43 +93,7 @@ POST /factcheck
 *URL active only when `uvicorn app:app --reload` + pyngrok running* [gist.github](https://gist.github.com/alexdlaird/1f0e45d943120d9e9cea8485773a0e4f)
 
 
-fake_news_detection/
-│
-├── pipeline/
-│     └── main_pipeline.py          # Main fact-checking pipeline
-│   
-|      
-├── src/
-│   └── verification/
-│       └── similarity_search.py  # FAISS semantic search engine
-│
-├── training/
-│   └── train_classical.py        # ML model training script
-│
-├── prepare_data.py               # Builds FAISS index       
-│
-├── faiss_index/
-│   ├── index.faiss               # Generated FAISS index     
-│   ├── claims.pkl                # Generated claims          
-│   ├── labels.pkl                # Generated labels          
-│   ├── evidence.pkl              # Generated evidence       
-│   └── embeddings.npy            # Generated embeddings      
-│
-├── saved_models/
-│   ├── tfidf.pkl                 # Trained TF-IDF         
-│   ├── passive_aggressive.pkl    # Trained PA model          
-│   └── logistic_regression.pkl   # Trained LR model          
-│
-├── data/
-│   └── raw/
-│       ├── fake.csv              # Kaggle dataset            
-│       └── true.csv              # Kaggle dataset            
-│
-├── requirements.txt              # All dependencies         
-├── .env                          # Your API key              
-├── .env.example                  # API key format           
-├── .gitignore                    # Files to ignore           
-└── README.md                     # Project documentation     
+
 
 ##  Quick Start
 
