@@ -4,6 +4,7 @@ import faiss
 import os
 import pickle
 from sentence_transformers import SentenceTransformer
+from huggingface_hub import login
 
 # CONFIGURATION
 CONFIG = {
@@ -12,9 +13,24 @@ CONFIG = {
     "processed_folder": "data/processed",
     "batch_size"      : 64,
     "model_name"      : "intfloat/multilingual-e5-small",
+    "max_chars"       : 200,   # scaledown limit for FEVER claims
 }
-from huggingface_hub import login
+
+# ================= SCALE DOWN =================
+def scale_down(text, max_chars=CONFIG["max_chars"]):
+    if not isinstance(text, str):
+        return ""
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    truncated   = text[:max_chars]
+    last_period = truncated.rfind('.')
+    if last_period > 80:
+        return truncated[:last_period + 1]
+    return truncated
+
 login(token="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")
+
 # STEP 0: CREATE REQUIRED FOLDERS
 print("Creating required folders...")
 os.makedirs(CONFIG["save_folder"], exist_ok=True)
@@ -23,14 +39,11 @@ print("Folders ready!")
 
 # STEP 1: LOAD MODEL
 print("Loading embedding model...")
-print("Model: " + CONFIG["model_name"])
-print("Supports Hindi + 100 languages!")
 model = SentenceTransformer(CONFIG["model_name"])
 print("Model loaded!")
 
 # STEP 2: LOAD DATASET
 print("Loading FEVER dataset...")
-print("Path: " + CONFIG["data_path"])
 
 if not os.path.exists(CONFIG["data_path"]):
     print("ERROR: Dataset not found!")
@@ -40,16 +53,30 @@ if not os.path.exists(CONFIG["data_path"]):
 data = pd.read_json(CONFIG["data_path"], lines=True)
 print("Dataset loaded!")
 print("Total rows: " + str(len(data)))
-print("Columns: " + str(list(data.columns)))
+print("Columns   : " + str(list(data.columns)))
 
-# STEP 3: EXTRACT DATA
-print("Extracting claims, labels, evidence...")
+# STEP 3: EXTRACT + SCALE DOWN
+print("Extracting and scaling down claims...")
 
-claims = data["claim"].tolist()
-print("Claims: " + str(len(claims)))
+raw_claims = data["claim"].tolist()
+labels     = data["label"].tolist()
 
-labels = data["label"].tolist()
-print("Labels: " + str(set(labels)))
+# apply scale down to claims
+claims = [scale_down(c) for c in raw_claims]
+
+print("Raw claims   : " + str(len(raw_claims)))
+print("Scaled claims: " + str(len(claims)))
+print("Labels found : " + str(set(labels)))
+print("Sample raw   : " + raw_claims[0][:80])
+print("Sample scaled: " + claims[0][:80])
+print("Sample label : " + labels[0])
+
+# check how much we reduced
+avg_raw    = sum(len(c) for c in raw_claims) / len(raw_claims)
+avg_scaled = sum(len(c) for c in claims)     / len(claims)
+print("Avg chars before: " + str(round(avg_raw, 1)))
+print("Avg chars after : " + str(round(avg_scaled, 1)))
+print("Reduction       : " + str(round((1 - avg_scaled/avg_raw)*100, 1)) + "%")
 
 if "evidence" in data.columns:
     evidence = data["evidence"].tolist()
@@ -57,9 +84,6 @@ if "evidence" in data.columns:
 else:
     evidence = [""] * len(claims)
     print("No evidence column, using empty")
-
-print("Sample claim: " + claims[0][:60])
-print("Sample label: " + labels[0])
 
 # STEP 4: SAVE PROCESSED DATA
 print("Saving processed data...")
@@ -83,8 +107,7 @@ print("Saved to: " + processed_path)
 # STEP 5: GENERATE EMBEDDINGS
 print("Generating embeddings...")
 print("Total claims: " + str(len(claims)))
-print("Batch size: " + str(CONFIG["batch_size"]))
-print("This may take 30-60 minutes...")
+print("Batch size  : " + str(CONFIG["batch_size"]))
 
 checkpoint_path = os.path.join(
     CONFIG["save_folder"],
@@ -203,10 +226,7 @@ all_good   = True
 total_size = 0
 
 for filename in files_to_verify:
-    full_path = os.path.join(
-        CONFIG["save_folder"],
-        filename
-    )
+    full_path = os.path.join(CONFIG["save_folder"], filename)
     if os.path.exists(full_path):
         size       = os.path.getsize(full_path)
         size_mb    = size / (1024 * 1024)
@@ -227,17 +247,13 @@ else:
 print("Testing search function...")
 
 def search_evidence(query, top_k=5):
-    query_prefixed = "query: " + query
-
+    query_prefixed  = "query: " + scale_down(query)
     query_embedding = model.encode(
         [query_prefixed],
         normalize_embeddings=True
     ).astype("float32")
 
-    scores, indices = index.search(
-        query_embedding,
-        top_k
-    )
+    scores, indices = index.search(query_embedding, top_k)
 
     results = []
     for score, idx in zip(scores[0], indices[0]):
@@ -260,6 +276,10 @@ for i, result in enumerate(results, 1):
     print("  Label: " + result["label"])
     print("  Claim: " + result["claim"][:60] + "...")
 
-print("prepare_data.py COMPLETE!")
+print("\nprepare_data.py COMPLETE!")
+print("Scale-down applied — faster embeddings!")
 print("Files saved in faiss_index/ folder")
-print("Next step: run train_classical.py")
+print("Next step: run main_pipeline.py")
+
+
+
