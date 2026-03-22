@@ -1,4 +1,4 @@
-**Fake News Detector**
+**AUTOMATED FACT DETECTOR FOR VERNACULAR NEWS**
 
 *Intel Unnati Industrial Training Project*
 
@@ -18,7 +18,7 @@ AI-powered fact-checking system verifying news claims using a hybrid pipeline:
 
 - **Classical ML** (99.94% accuracy classifiers)
 - **FAISS semantic search** (145K FEVER embeddings)
-- **Zero-shot NLI** (BART-large-mnli)
+- **Zero-shot NLI** (BERT-large-mnli)
 - **Wikipedia fallback** + **Gemini LLM explanations**
 
 **Outputs:**  REAL |  FAKE |  UNVERIFIED + human-readable reasoning 
