@@ -97,8 +97,8 @@ fake_news_detection/
 │
 ├── pipeline/
 │     └── main_pipeline.py          # Main fact-checking pipeline
-│     |---app.py
-|      |--benchmark.py
+│   
+|      
 ├── src/
 │   └── verification/
 │       └── similarity_search.py  # FAISS semantic search engine
