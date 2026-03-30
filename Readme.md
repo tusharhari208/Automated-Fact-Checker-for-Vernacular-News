@@ -91,6 +91,19 @@ POST /factcheck
 ```
 
 *URL active only when `uvicorn app:app --reload` + pyngrok running* [gist.github](https://gist.github.com/alexdlaird/1f0e45d943120d9e9cea8485773a0e4f)
+---
+
+**Live URL:**  
+https://thelma-casketlike-cully.ngrok-free.dev/docs#/
+
+⚠️ **Note:**  
+This project is currently hosted using ngrok for demonstration purposes.  
+The backend server must be running for the link to work.  
+
+If the link is inactive, please contact me for an updated working URL.
+```
+
+---
 
 
 
